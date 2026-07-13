@@ -237,7 +237,20 @@ Respond with ONLY a valid JSON object \u2014 no markdown fences, no preamble, no
 }
 Scores are integers 0-10. Be honest and calibrated \u2014 a beginner usually earns 3-6; reserve 8+ for genuinely impressive craft.`;try{let ge=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":je,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:1e3,messages:[{role:"user",content:et}]})}),Se=await ge.json();if(!ge.ok){let Tn=Se&&Se.error&&Se.error.message?Se.error.message:"status "+ge.status;throw new Error(Tn)}let ro=(Se.content||[]).filter(Tn=>Tn.type==="text").map(Tn=>Tn.text).join(`
 `).replace(/```json|```/g,"").trim(),Rr=null;try{Rr=JSON.parse(ro)}catch{let Ro=ro.match(/\{[\s\S]*\}/);if(Ro)try{Rr=JSON.parse(Ro[0])}catch{}}(!Rr||!Rr.verdict)&&(Rr={verdict:ro||"The heavens crackled, but no verdict came through. Summon the God again.",scores:null}),it(Tn=>Tn.map(Ro=>Ro.id===N.id?{...Ro,eval:Rr}:Ro))}catch(ge){it(Se=>Se.map(Sn=>Sn.id===N.id?{...Sn,eval:{verdict:"The heavens rejected the offering: "+(ge&&ge.message?ge.message:"connection failed")+". Check your API key in \u2699 God settings and summon again.",scores:null}}:Sn))}finally{Jr(null)}},[vn,F0]=(0,x.useState)(null),[Ks,ld]=(0,x.useState)(30),[or,ud]=(0,x.useState)(!1),[cd,va]=(0,x.useState)(""),[wn,pd]=(0,x.useState)([]),[M0,I0]=(0,x.useState)(0);(0,x.useEffect)(()=>{let N;return or&&Ks>0?N=setTimeout(()=>ld(H=>H-1),1e3):or&&Ks===0&&(ud(!1),I0(H=>Math.max(H,wn.length)),wn.length>0&&i()),()=>clearTimeout(N)},[or,Ks,wn.length,i]);let P0=()=>{F0(C0[Math.floor(Math.random()*C0.length)]),pd([]),va(""),ld(30),ud(!0)},hd=()=>{let N=nd(cd);if(!N||!or)return;if(wn.some(ie=>ie.word===N)||N===nd(vn)){va("");return}let H="stretch";od(N)===od(vn)?H="tight":N0(N)===N0(vn)&&(H="slant"),pd(ie=>[{word:N,grade:H},...ie]),va("")},qu=r.completed.length,wa=Math.round(qu/Fu.length*100);return x.default.createElement("div",{className:"min-h-screen w-full flex flex-col",style:{backgroundColor:I.ink,fontFamily:xa,color:I.ink}},x.default.createElement("style",null,`
-        @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Caveat:wght@600&display=swap');
+        @font-face {
+          font-family: 'Archivo Black';
+          src: url('./assets/fonts/archivo-black-latin-400-normal.woff2') format('woff2');
+          font-weight: 400;
+          font-style: normal;
+          font-display: swap;
+        }
+        @font-face {
+          font-family: 'Caveat';
+          src: url('./assets/fonts/caveat-latin-600-normal.woff2') format('woff2');
+          font-weight: 600;
+          font-style: normal;
+          font-display: swap;
+        }
         .beatdot { transition: transform 0.08s ease, background-color 0.08s ease; }
         @media (prefers-reduced-motion: reduce) {
           .beatdot { transition: none; }

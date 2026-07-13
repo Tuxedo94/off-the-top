@@ -924,7 +924,20 @@ Scores are integers 0-10. Be honest and calibrated — a beginner usually earns 
       style={{ backgroundColor: C.ink, fontFamily: BODY, color: C.ink }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Archivo+Black&family=Caveat:wght@600&display=swap');
+        @font-face {
+          font-family: 'Archivo Black';
+          src: url('./assets/fonts/archivo-black-latin-400-normal.woff2') format('woff2');
+          font-weight: 400;
+          font-style: normal;
+          font-display: swap;
+        }
+        @font-face {
+          font-family: 'Caveat';
+          src: url('./assets/fonts/caveat-latin-600-normal.woff2') format('woff2');
+          font-weight: 600;
+          font-style: normal;
+          font-display: swap;
+        }
         .beatdot { transition: transform 0.08s ease, background-color 0.08s ease; }
         @media (prefers-reduced-motion: reduce) {
           .beatdot { transition: none; }

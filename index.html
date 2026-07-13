@@ -2,14 +2,32 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
   <title>Off the Top — Freestyle Rhyme Book</title>
   <meta name="description" content="Learn freestyle rap from A to Z: lessons, a practice booth with beats and word drops, a rhyme lab, and a recorded take log judged by the Freestyle God." />
-  <script src="https://cdn.tailwindcss.com"></script>
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <meta name="theme-color" content="#1A160F" />
+  <link rel="icon" href="./assets/icon-192.png" />
+
+  <!-- iOS: installable, standalone, correct home-screen icon -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Off the Top" />
+  <link rel="apple-touch-icon" href="./assets/icon-192.png" />
+
+  <link rel="stylesheet" href="./assets/tailwind.css" />
   <style>html, body, #root { margin: 0; min-height: 100%; }</style>
 </head>
 <body>
   <div id="root"></div>
   <script src="./assets/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>
