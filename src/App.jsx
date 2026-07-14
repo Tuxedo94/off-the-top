@@ -756,8 +756,13 @@ export default function FreestyleRhymeBook() {
       );
       return;
     }
-    const apiKey = (localStorage.getItem("otr:apikey") || "").trim();
-    if (!apiKey) {
+    const provider = localStorage.getItem("otr:provider") || "openrouter";
+    const anthropicKey = (localStorage.getItem("otr:apikey") || "").trim();
+    const orKey = (localStorage.getItem("otr:orkey") || "").trim();
+    const orModel =
+      (localStorage.getItem("otr:ormodel") || "").trim() || "openrouter/free";
+    const activeKey = provider === "anthropic" ? anthropicKey : orKey;
+    if (!activeKey) {
       updateTakes((prev) =>
         prev.map((t) =>
           t.id === take.id
@@ -765,7 +770,7 @@ export default function FreestyleRhymeBook() {
                 ...t,
                 eval: {
                   verdict:
-                    "The God cannot hear you from this realm without an offering. Open ⚙ God settings at the top of The Log, paste your Anthropic API key, and summon again.",
+                    "The God cannot hear you from this realm without an offering. Open ⚙ God settings at the top of The Log, choose a provider and paste your API key, then summon again.",
                   scores: null,
                 },
               }
@@ -800,32 +805,68 @@ Respond with ONLY a valid JSON object — no markdown fences, no preamble, no te
 Scores are integers 0-10. Be honest and calibrated — a beginner usually earns 3-6; reserve 8+ for genuinely impressive craft.`;
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: promptText }],
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        const msg =
-          data && data.error && data.error.message
-            ? data.error.message
-            : "status " + response.status;
-        throw new Error(msg);
+      let text = "";
+      if (provider === "anthropic") {
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": anthropicKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true",
+          },
+          body: JSON.stringify({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1000,
+            messages: [{ role: "user", content: promptText }],
+          }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          const msg =
+            data && data.error && data.error.message
+              ? data.error.message
+              : "status " + response.status;
+          throw new Error(msg);
+        }
+        text = (data.content || [])
+          .filter((b) => b.type === "text")
+          .map((b) => b.text)
+          .join("\n");
+      } else {
+        // OpenRouter — OpenAI-compatible chat completions
+        const response = await fetch(
+          "https://openrouter.ai/api/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + orKey,
+              "HTTP-Referer": "https://tuxedo94.github.io/off-the-top/",
+              "X-Title": "Off the Top",
+            },
+            body: JSON.stringify({
+              model: orModel,
+              max_tokens: 1000,
+              messages: [{ role: "user", content: promptText }],
+            }),
+          }
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          const msg =
+            data && data.error && data.error.message
+              ? data.error.message
+              : "status " + response.status;
+          throw new Error(msg);
+        }
+        text =
+          (data.choices &&
+            data.choices[0] &&
+            data.choices[0].message &&
+            data.choices[0].message.content) ||
+          "";
       }
-      const text = (data.content || [])
-        .filter((b) => b.type === "text")
-        .map((b) => b.text)
-        .join("\n");
       const cleanText = text.replace(/```json|```/g, "").trim();
       let parsed = null;
       try {
@@ -1953,14 +1994,79 @@ function TakeCard({ take, judging, onJudge, onDelete, onEdit, loadAudio }) {
   );
 }
 
-/* ============ God settings (API key, web version only) ============ */
+/* ============ God settings (provider + API key + model, web version) ============ */
 
 function GodKey() {
-  const [key, setKey] = useState(
+  const [open, setOpen] = useState(false);
+  const [provider, setProvider] = useState(
+    () => localStorage.getItem("otr:provider") || "openrouter"
+  );
+  const [orKey, setOrKey] = useState(
+    () => localStorage.getItem("otr:orkey") || ""
+  );
+  const [anthKey, setAnthKey] = useState(
     () => localStorage.getItem("otr:apikey") || ""
   );
-  const [open, setOpen] = useState(false);
+  const [orModel, setOrModel] = useState(
+    () => localStorage.getItem("otr:ormodel") || "openrouter/free"
+  );
+  const [freeModels, setFreeModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState(null);
   const [saved, setSaved] = useState(false);
+
+  const hasKey =
+    provider === "anthropic" ? anthKey.trim() : orKey.trim();
+
+  const loadFreeModels = useCallback(async () => {
+    setLoadingModels(true);
+    setModelsError(null);
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models");
+      const data = await res.json();
+      const free = (data.data || [])
+        .filter(
+          (m) =>
+            m.pricing &&
+            Number(m.pricing.prompt) === 0 &&
+            Number(m.pricing.completion) === 0
+        )
+        .map((m) => ({ id: m.id, name: m.name || m.id }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setFreeModels(free);
+      if (free.length === 0)
+        setModelsError("No free models reported right now — openrouter/free still works.");
+    } catch (e) {
+      setModelsError("Couldn't reach OpenRouter's model list (offline?). You can still use Auto or type a model ID.");
+    } finally {
+      setLoadingModels(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open && provider === "openrouter" && freeModels.length === 0) {
+      loadFreeModels();
+    }
+  }, [open, provider, freeModels.length, loadFreeModels]);
+
+  const save = () => {
+    localStorage.setItem("otr:provider", provider);
+    localStorage.setItem("otr:orkey", orKey.trim());
+    localStorage.setItem("otr:apikey", anthKey.trim());
+    localStorage.setItem("otr:ormodel", (orModel || "openrouter/free").trim());
+    setSaved(true);
+  };
+
+  const dirty = () => setSaved(false);
+
+  const inputStyle = {
+    border: `2px solid ${C.ink}`,
+    fontFamily: BODY,
+    fontSize: "0.85rem",
+    backgroundColor: "#FFFFFF",
+    color: C.ink,
+  };
+
   return (
     <div
       className="mt-3"
@@ -1976,45 +2082,143 @@ function GodKey() {
           className="uppercase font-bold"
           style={{ fontFamily: DISPLAY, fontSize: "0.65rem", letterSpacing: "0.1em" }}
         >
-          ⚙ God settings {key ? "· key set" : "· key missing"}
+          ⚙ God settings {hasKey ? "· ready" : "· key missing"}
         </span>
         <span style={{ fontFamily: DISPLAY, color: C.dim }}>{open ? "–" : "+"}</span>
       </button>
+
       {open && (
-        <div className="px-3 pb-3 flex flex-col gap-2">
-          <div style={{ fontSize: "0.7rem", color: C.dim, lineHeight: 1.5 }}>
-            On this site, the Freestyle God speaks through your own Anthropic API
-            key (create one at console.anthropic.com). It is stored only in this
-            browser and sent only to api.anthropic.com — but treat it like a
-            password and never share this device or the key.
-          </div>
-          <div className="flex gap-2">
-            <input
-              type="password"
-              value={key}
-              onChange={(e) => {
-                setKey(e.target.value);
-                setSaved(false);
-              }}
-              placeholder="sk-ant-…"
-              autoComplete="off"
-              className="flex-1 px-3 py-2"
-              style={{
-                border: `2px solid ${C.ink}`,
-                fontFamily: BODY,
-                fontSize: "0.85rem",
-                backgroundColor: "#FFFFFF",
-                color: C.ink,
-              }}
-            />
-            <InkButton
-              onClick={() => {
-                localStorage.setItem("otr:apikey", key.trim());
-                setSaved(true);
-              }}
+        <div className="px-3 pb-3 flex flex-col gap-3">
+          {/* provider toggle */}
+          <div>
+            <div
+              className="uppercase font-bold mb-1"
+              style={{ fontSize: "0.6rem", letterSpacing: "0.15em", color: C.blue }}
             >
-              {saved ? "✓ Saved" : "Save"}
-            </InkButton>
+              Provider
+            </div>
+            <div className="flex gap-2">
+              <InkButton
+                active={provider === "openrouter"}
+                onClick={() => {
+                  setProvider("openrouter");
+                  dirty();
+                }}
+              >
+                OpenRouter (free)
+              </InkButton>
+              <InkButton
+                active={provider === "anthropic"}
+                onClick={() => {
+                  setProvider("anthropic");
+                  dirty();
+                }}
+              >
+                Anthropic
+              </InkButton>
+            </div>
+          </div>
+
+          {provider === "openrouter" ? (
+            <>
+              <div style={{ fontSize: "0.7rem", color: C.dim, lineHeight: 1.5 }}>
+                Get a free key at openrouter.ai/keys. Stored only in this browser,
+                sent only to openrouter.ai. Free models are rate-limited (roughly
+                20/min, 200/day) and rotate often — "Auto (free router)" always
+                works. Only a text transcript is ever sent; never your audio.
+              </div>
+              <input
+                type="password"
+                value={orKey}
+                onChange={(e) => {
+                  setOrKey(e.target.value);
+                  dirty();
+                }}
+                placeholder="sk-or-v1-…"
+                autoComplete="off"
+                className="px-3 py-2"
+                style={inputStyle}
+              />
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className="uppercase font-bold"
+                    style={{ fontSize: "0.6rem", letterSpacing: "0.15em", color: C.blue }}
+                  >
+                    Free model
+                  </span>
+                  <button
+                    onClick={loadFreeModels}
+                    disabled={loadingModels}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      textDecoration: "underline",
+                      color: C.dim,
+                      fontSize: "0.65rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {loadingModels ? "loading…" : "↻ refresh list"}
+                  </button>
+                </div>
+                <select
+                  value={orModel}
+                  onChange={(e) => {
+                    setOrModel(e.target.value);
+                    dirty();
+                  }}
+                  className="w-full px-3 py-2"
+                  style={inputStyle}
+                >
+                  <option value="openrouter/free">Auto (free router) — always works</option>
+                  {freeModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                  {orModel &&
+                    orModel !== "openrouter/free" &&
+                    !freeModels.some((m) => m.id === orModel) && (
+                      <option value={orModel}>{orModel} (saved)</option>
+                    )}
+                </select>
+                {modelsError && (
+                  <div style={{ fontSize: "0.65rem", color: C.dim, marginTop: "4px" }}>
+                    {modelsError}
+                  </div>
+                )}
+                {!modelsError && freeModels.length > 0 && (
+                  <div style={{ fontSize: "0.65rem", color: C.dim, marginTop: "4px" }}>
+                    {freeModels.length} free models live right now.
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ fontSize: "0.7rem", color: C.dim, lineHeight: 1.5 }}>
+                Uses Claude via your Anthropic key (console.anthropic.com). Stored
+                only in this browser, sent only to api.anthropic.com. Only a text
+                transcript is ever sent; never your audio.
+              </div>
+              <input
+                type="password"
+                value={anthKey}
+                onChange={(e) => {
+                  setAnthKey(e.target.value);
+                  dirty();
+                }}
+                placeholder="sk-ant-…"
+                autoComplete="off"
+                className="px-3 py-2"
+                style={inputStyle}
+              />
+            </>
+          )}
+
+          <div>
+            <InkButton onClick={save}>{saved ? "✓ Saved" : "Save settings"}</InkButton>
           </div>
         </div>
       )}
