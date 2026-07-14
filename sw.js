@@ -1,4 +1,4 @@
-const CACHE = "off-the-top-v2";
+const CACHE = "off-the-top-v3";
 const SHELL = [
   "./",
   "./index.html",

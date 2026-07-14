@@ -879,6 +879,57 @@ Scores are integers 0-10. Be honest and calibrated — a beginner usually earns 
   const [rlEntries, setRlEntries] = useState([]);
   const [rlBest, setRlBest] = useState(0);
 
+  // lifetime rhyme bank: { [target]: { [word]: { grade, count, first, last } } }
+  const [rhymeBank, setRhymeBank] = useState({});
+  const rhymeBankRef = useRef({});
+  const [bankLoaded, setBankLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await appStore.get("rhymebank-v1");
+        if (r && r.value) {
+          const parsed = JSON.parse(r.value);
+          rhymeBankRef.current = parsed;
+          setRhymeBank(parsed);
+        }
+      } catch (e) {
+        /* no bank yet */
+      } finally {
+        setBankLoaded(true);
+      }
+    })();
+  }, []);
+
+  const persistBank = useCallback(async (bank) => {
+    rhymeBankRef.current = bank;
+    try {
+      await appStore.set("rhymebank-v1", JSON.stringify(bank));
+    } catch (e) {
+      console.error("Couldn't save rhyme bank", e);
+    }
+  }, []);
+
+  // record a landed rhyme into the lifetime bank immediately (never lost)
+  const bankRhyme = useCallback(
+    (target, word, grade) => {
+      const t = clean(target);
+      const w = clean(word);
+      if (!t || !w) return;
+      const now = Date.now();
+      const bank = { ...rhymeBankRef.current };
+      const group = { ...(bank[t] || {}) };
+      const existing = group[w];
+      group[w] = existing
+        ? { ...existing, count: existing.count + 1, last: now, grade }
+        : { grade, count: 1, first: now, last: now };
+      bank[t] = group;
+      setRhymeBank(bank);
+      persistBank(bank);
+    },
+    [persistBank]
+  );
+
   useEffect(() => {
     let t;
     if (rlRunning && rlTime > 0) {
@@ -910,6 +961,7 @@ Scores are integers 0-10. Be honest and calibrated — a beginner usually earns 
     if (vowelTail(w) === vowelTail(rlTarget)) grade = "tight";
     else if (tailVowels(w) === tailVowels(rlTarget)) grade = "slant";
     setRlEntries((es) => [{ word: w, grade }, ...es]);
+    bankRhyme(rlTarget, w, grade); // saved to the lifetime bank right away
     setRlInput("");
   };
 
@@ -1452,6 +1504,29 @@ Scores are integers 0-10. Be honest and calibrated — a beginner usually earns 
                 )}
               </>
             )}
+
+            <RhymeBank
+              bank={rhymeBank}
+              loaded={bankLoaded}
+              onAdd={bankRhyme}
+              onDeleteWord={(target, word) => {
+                const bank = { ...rhymeBankRef.current };
+                if (bank[target]) {
+                  const group = { ...bank[target] };
+                  delete group[word];
+                  if (Object.keys(group).length === 0) delete bank[target];
+                  else bank[target] = group;
+                  setRhymeBank(bank);
+                  persistBank(bank);
+                }
+              }}
+              gradeOf={(target, word) => {
+                const w = clean(word);
+                if (vowelTail(w) === vowelTail(target)) return "tight";
+                if (tailVowels(w) === tailVowels(target)) return "slant";
+                return "stretch";
+              }}
+            />
           </section>
 
           {/* ================= THE LOG ================= */}
@@ -1942,6 +2017,220 @@ function GodKey() {
             </InkButton>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/* ============ Lifetime Rhyme Bank ============ */
+
+function RhymeBank({ bank, loaded, onAdd, onDeleteWord, gradeOf }) {
+  const [target, setTarget] = useState("");
+  const [word, setWord] = useState("");
+  const [openGroup, setOpenGroup] = useState(null);
+  const [query, setQuery] = useState("");
+
+  const targets = Object.keys(bank).sort((a, b) => {
+    const ca = Object.keys(bank[a]).length;
+    const cb = Object.keys(bank[b]).length;
+    return cb - ca || a.localeCompare(b);
+  });
+  const totalWords = targets.reduce(
+    (n, t) => n + Object.keys(bank[t]).length,
+    0
+  );
+
+  const add = () => {
+    const t = (target || "").trim();
+    const w = (word || "").trim();
+    if (!t || !w) return;
+    onAdd(t, w, gradeOf(t.toLowerCase().replace(/[^a-z]/g, ""), w));
+    setWord("");
+  };
+
+  const q = query.trim().toLowerCase();
+  const shownTargets = q
+    ? targets.filter(
+        (t) =>
+          t.includes(q) ||
+          Object.keys(bank[t]).some((w) => w.includes(q))
+      )
+    : targets;
+
+  return (
+    <div className="mt-6">
+      <div
+        className="flex items-center justify-between mb-2 pb-1"
+        style={{ borderBottom: `2px solid ${C.ink}` }}
+      >
+        <span
+          style={{ fontFamily: DISPLAY, fontSize: "1rem", letterSpacing: "0.03em" }}
+        >
+          MY RHYME BANK
+        </span>
+        <span style={{ fontSize: "0.7rem", color: C.dim }}>
+          {totalWords} word{totalWords === 1 ? "" : "s"} · {targets.length} group
+          {targets.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      <div className="mb-3">
+        <MarginNote>
+          every rhyme you land is saved here forever — even offline. add your own
+          anytime.
+        </MarginNote>
+      </div>
+
+      {/* free add — works anytime, no round needed */}
+      <div
+        className="p-3 mb-3 flex flex-col gap-2"
+        style={{ border: `2px solid ${C.ink}`, backgroundColor: "rgba(255,255,255,0.55)" }}
+      >
+        <div
+          className="uppercase font-bold"
+          style={{ fontSize: "0.6rem", letterSpacing: "0.15em", color: C.blue }}
+        >
+          Bank a rhyme by hand
+        </div>
+        <div className="flex gap-2">
+          <input
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+            placeholder="word…"
+            autoComplete="off"
+            autoCapitalize="off"
+            className="flex-1 px-3 py-2"
+            style={{
+              border: `2px solid ${C.ink}`,
+              fontFamily: BODY,
+              fontSize: "0.9rem",
+              backgroundColor: "#FFFFFF",
+              color: C.ink,
+              minWidth: 0,
+            }}
+          />
+          <span style={{ fontFamily: HAND, color: C.blue, fontSize: "1.2rem", alignSelf: "center" }}>
+            rhymes
+          </span>
+          <input
+            value={word}
+            onChange={(e) => setWord(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && add()}
+            placeholder="with…"
+            autoComplete="off"
+            autoCapitalize="off"
+            className="flex-1 px-3 py-2"
+            style={{
+              border: `2px solid ${C.ink}`,
+              fontFamily: BODY,
+              fontSize: "0.9rem",
+              backgroundColor: "#FFFFFF",
+              color: C.ink,
+              minWidth: 0,
+            }}
+          />
+          <InkButton onClick={add}>Save</InkButton>
+        </div>
+      </div>
+
+      {!loaded ? (
+        <div style={{ fontSize: "0.8rem", color: C.dim }}>opening the book…</div>
+      ) : targets.length === 0 ? (
+        <div style={{ fontSize: "0.8rem", color: C.dim, lineHeight: 1.5 }}>
+          Empty for now. Run a round above or bank a rhyme by hand — everything you
+          land is kept here for good.
+        </div>
+      ) : (
+        <>
+          {targets.length > 4 && (
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="search your bank…"
+              autoComplete="off"
+              className="w-full px-3 py-2 mb-3"
+              style={{
+                border: `2px solid ${C.ink}`,
+                fontFamily: BODY,
+                fontSize: "0.85rem",
+                backgroundColor: "#FFFFFF",
+                color: C.ink,
+              }}
+            />
+          )}
+          <div className="flex flex-col gap-2">
+            {shownTargets.map((t) => {
+              const words = Object.entries(bank[t]).sort(
+                (a, b) => (b[1].last || 0) - (a[1].last || 0)
+              );
+              const isOpen = openGroup === t || !!q;
+              return (
+                <div
+                  key={t}
+                  style={{
+                    border: `2px solid ${C.ink}`,
+                    backgroundColor: "rgba(255,255,255,0.6)",
+                  }}
+                >
+                  <button
+                    onClick={() => setOpenGroup(isOpen && !q ? null : t)}
+                    className="w-full text-left px-3 py-2 flex items-center justify-between"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.ink }}
+                  >
+                    <span style={{ fontFamily: DISPLAY, fontSize: "0.85rem", textTransform: "uppercase" }}>
+                      {t}
+                    </span>
+                    <span style={{ fontSize: "0.7rem", color: C.dim }}>
+                      {words.length} rhyme{words.length === 1 ? "" : "s"} {q ? "" : isOpen ? "–" : "+"}
+                    </span>
+                  </button>
+                  {isOpen && (
+                    <div className="px-3 pb-3 flex flex-wrap gap-2">
+                      {words.map(([w, meta]) => (
+                        <span
+                          key={w}
+                          className="px-2 py-1 text-sm font-bold inline-flex items-center gap-1"
+                          style={{
+                            border: `2px solid ${C.ink}`,
+                            backgroundColor:
+                              meta.grade === "tight"
+                                ? C.hi
+                                : meta.grade === "slant"
+                                ? "#FFFFFF"
+                                : "#EDE8DA",
+                            color: C.ink,
+                          }}
+                        >
+                          {w}
+                          {meta.count > 1 && (
+                            <span style={{ fontSize: "0.6rem", color: C.dim }}>
+                              ×{meta.count}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => onDeleteWord(t, w)}
+                            aria-label={"remove " + w}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              color: C.dim,
+                              fontSize: "0.9rem",
+                              lineHeight: 1,
+                              padding: "0 0 0 2px",
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );
